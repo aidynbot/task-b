@@ -1,0 +1,140 @@
+@baseUrl = http://localhost:8000
+
+### Health check
+GET {{baseUrl}}/health
+
+### 1. Создать организацию
+POST {{baseUrl}}/companies
+Content-Type: application/json
+
+{
+  "name": "ТОО Пример",
+  "bin": "123456789012",
+  "phone": "+77001234567"
+}
+
+> {% client.global.set("companyId", response.body.id); %}
+
+### 2. Назначить встречу на понедельник, 09:00 по Алматы (04:00 UTC)
+POST {{baseUrl}}/meetings
+Content-Type: application/json
+
+{
+  "company_id": {{companyId}},
+  "manager_id": 1,
+  "start_time": "2026-11-23T04:00:00Z"
+}
+
+> {% client.global.set("meetingId", response.body.id); %}
+
+### 3. Записать звонок и связать его с назначенной встречей
+POST {{baseUrl}}/calls
+Content-Type: application/json
+
+{
+  "company_id": {{companyId}},
+  "manager_id": 1,
+  "result": "meeting_set",
+  "meeting_id": {{meetingId}}
+}
+
+### 4. Список организаций с пагинацией
+GET {{baseUrl}}/companies?status=meeting_set&limit=20&offset=0
+
+### 5. Расписание менеджера за день по календарю Алматы
+GET {{baseUrl}}/managers/1/schedule?date=2026-11-23
+
+### 6. Перенести встречу на 10:00 по Алматы (05:00 UTC)
+PATCH {{baseUrl}}/meetings/{{meetingId}}
+Content-Type: application/json
+
+{
+  "start_time": "2026-11-23T05:00:00Z"
+}
+
+### 7. Отменить встречу
+PATCH {{baseUrl}}/meetings/{{meetingId}}
+Content-Type: application/json
+
+{
+  "status": "cancelled"
+}
+
+### 8. Атомарно создать встречу при фиксации звонка
+POST {{baseUrl}}/companies
+Content-Type: application/json
+
+{
+  "name": "ТОО Атомарный пример",
+  "bin": "223456789012",
+  "phone": "+77007654321"
+}
+
+> {% client.global.set("atomicCompanyId", response.body.id); %}
+
+### Встреча создаётся и привязывается к звонку в одной транзакции
+POST {{baseUrl}}/calls
+Content-Type: application/json
+
+{
+  "company_id": {{atomicCompanyId}},
+  "manager_id": 2,
+  "result": "meeting_set",
+  "meeting": {
+    "start_time": "2026-11-23T06:00:00Z"
+  }
+}
+
+### 9. Негативный пример: пересечение с активной встречей менеджера (409)
+POST {{baseUrl}}/companies
+Content-Type: application/json
+
+{
+  "name": "ТОО Проверка конфликта",
+  "bin": "323456789012",
+  "phone": "+77001112233"
+}
+
+> {% client.global.set("conflictCompanyId", response.body.id); %}
+
+### Занятый интервал менеджера 2: 11:00–12:00 по Алматы
+POST {{baseUrl}}/meetings
+Content-Type: application/json
+
+{
+  "company_id": {{conflictCompanyId}},
+  "manager_id": 2,
+  "start_time": "2026-11-23T06:30:00Z"
+}
+
+### 10. Негативный пример: начало 17:30 по Алматы не помещается в рабочий день (422)
+POST {{baseUrl}}/companies
+Content-Type: application/json
+
+{
+  "name": "ТОО Проверка рабочего времени",
+  "bin": "423456789012",
+  "phone": "+77004445566"
+}
+
+> {% client.global.set("timeCheckCompanyId", response.body.id); %}
+
+### 12:30 UTC соответствует 17:30 Asia/Almaty
+POST {{baseUrl}}/meetings
+Content-Type: application/json
+
+{
+  "company_id": {{timeCheckCompanyId}},
+  "manager_id": 3,
+  "start_time": "2026-11-23T12:30:00Z"
+}
+
+### Негативный пример: naive datetime без часового пояса (422)
+POST {{baseUrl}}/meetings
+Content-Type: application/json
+
+{
+  "company_id": {{timeCheckCompanyId}},
+  "manager_id": 3,
+  "start_time": "2026-11-23T04:00:00"
+}

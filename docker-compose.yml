@@ -16,6 +16,7 @@ services:
       retries: 10
 
   test-db:
+    profiles: ["testing"]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: crm_user
