@@ -1,7 +1,8 @@
 """Pydantic request and response schemas for the CRM API."""
 
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
+from datetime import date as Date
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -58,48 +59,127 @@ class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ErrorResponse(BaseModel):
+    detail: str = Field(description="Краткое объяснение причины отказа.")
+
+
 class CompanyCreate(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "name": "ТОО Пример",
+                    "bin": "123456789012",
+                    "phone": "+7 (700) 123-45-67",
+                }
+            ]
+        }
+    )
+
     name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=300),
+        Field(description="Название организации."),
     ]
-    bin: Bin
-    phone: PhoneNumber
+    bin: Annotated[Bin, Field(description="БИН организации: ровно 12 цифр.")]
+    phone: Annotated[
+        PhoneNumber,
+        Field(
+            description=(
+                "Телефон Казахстана. Принимаются +7, 7 или внутренний префикс 8; "
+                "пробелы, скобки и дефисы удаляются, результат хранится как +7XXXXXXXXXX."
+            )
+        ),
+    ]
 
 
 class CompanyResponse(ORMModel):
     id: int
     name: str
-    bin: Bin
+    bin: Annotated[Bin, Field(description="Уникальный БИН организации.")]
     phone: PhoneNumber
     status: CompanyStatus
     created_at: UTCDateTime
 
 
 class CompanyListResponse(BaseModel):
-    items: list[CompanyResponse]
-    total: int = Field(ge=0)
-    limit: int = Field(ge=1)
-    offset: int = Field(ge=0)
+    items: list[CompanyResponse] = Field(description="Организации на текущей странице.")
+    total: int = Field(ge=0, description="Общее число организаций после фильтрации.")
+    limit: int = Field(ge=1, description="Максимум организаций в ответе.")
+    offset: int = Field(ge=0, description="Число пропущенных записей.")
 
 
 class MeetingDraft(BaseModel):
     """Meeting details nested in a call; company and manager come from the call."""
 
-    start_time: UTCDateTime
+    start_time: UTCDateTime = Field(
+        description="Начало новой встречи в UTC, ISO 8601 с часовым поясом.",
+        examples=["2026-11-23T04:00:00Z"],
+    )
 
 
 class MeetingCreate(BaseModel):
-    company_id: int = Field(gt=0)
-    manager_id: int = Field(gt=0)
-    start_time: UTCDateTime
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "company_id": 1,
+                    "manager_id": 1,
+                    "start_time": "2026-11-23T04:00:00Z",
+                }
+            ]
+        }
+    )
+
+    company_id: int = Field(gt=0, description="ID организации.")
+    manager_id: int = Field(gt=0, description="ID менеджера.")
+    start_time: UTCDateTime = Field(
+        description=(
+            "Начало встречи в UTC, ISO 8601 с часовым поясом. "
+            "Время проверяется по рабочему календарю Asia/Almaty."
+        ),
+        examples=["2026-11-23T04:00:00Z"],
+    )
 
 
 class CallCreate(BaseModel):
-    company_id: int = Field(gt=0)
-    manager_id: int = Field(gt=0)
-    result: CallResult
-    meeting_id: int | None = Field(default=None, gt=0)
-    meeting: MeetingDraft | None = None
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "company_id": 1,
+                    "manager_id": 1,
+                    "result": "meeting_set",
+                    "meeting_id": 10,
+                },
+                {
+                    "company_id": 1,
+                    "manager_id": 1,
+                    "result": "meeting_set",
+                    "meeting": {"start_time": "2026-11-23T04:00:00Z"},
+                },
+                {"company_id": 1, "manager_id": 1, "result": "no_answer"},
+            ]
+        }
+    )
+
+    company_id: int = Field(gt=0, description="ID организации, которой звонили.")
+    manager_id: int = Field(gt=0, description="ID менеджера, выполнившего звонок.")
+    result: CallResult = Field(
+        description="Итог звонка: встреча назначена, нет ответа или отказ."
+    )
+    meeting_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="ID существующей активной встречи этой организации.",
+    )
+    meeting: MeetingDraft | None = Field(
+        default=None,
+        description=(
+            "Данные для атомарного создания встречи. Укажите вместо meeting_id; "
+            "допустимо только при result=meeting_set."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_meeting_binding(self) -> "CallCreate":
@@ -141,8 +221,23 @@ class CallResponse(ORMModel):
 
 
 class MeetingPatch(BaseModel):
-    start_time: UTCDateTime | None = None
-    status: Literal["cancelled"] | None = None
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"start_time": "2026-11-23T05:00:00Z"},
+                {"status": "cancelled"},
+            ]
+        }
+    )
+
+    start_time: UTCDateTime | None = Field(
+        default=None,
+        description="Новое время начала в UTC для переноса встречи.",
+        examples=["2026-11-23T05:00:00Z"],
+    )
+    status: Literal["cancelled"] | None = Field(
+        default=None, description="Передайте cancelled для отмены встречи."
+    )
 
     @model_validator(mode="after")
     def require_one_action(self) -> "MeetingPatch":
@@ -154,6 +249,6 @@ class MeetingPatch(BaseModel):
 
 
 class ManagerScheduleResponse(BaseModel):
-    manager_id: int
-    date: date
-    items: list[MeetingResponse]
+    manager_id: int = Field(description="ID менеджера.")
+    date: Date = Field(description="Календарная дата в часовом поясе Asia/Almaty.")
+    items: list[MeetingResponse] = Field(description="Активные встречи этого дня.")

@@ -276,6 +276,22 @@ def test_invalid_company_phone_is_rejected(client: TestClient) -> None:
         assert response.status_code == 422
 
 
+def test_openapi_documents_endpoints_fields_and_error_body() -> None:
+    from app.main import app
+
+    spec = app.openapi()
+    assert spec["info"]["title"] == "Внутренняя CRM — API звонков и встреч"
+    create_call = spec["paths"]["/calls"]["post"]
+    assert create_call["summary"] == "Записать результат звонка"
+    assert "meeting_id" in create_call["description"]
+    error_schema = create_call["responses"]["422"]["content"]["application/json"][
+        "schema"
+    ]
+    assert error_schema["$ref"].endswith("/ErrorResponse")
+    phone_schema = spec["components"]["schemas"]["CompanyCreate"]["properties"]["phone"]
+    assert "результат хранится как" in phone_schema["description"]
+
+
 def test_concurrent_requests_for_same_manager_slot_create_one_meeting(
     client: TestClient,
 ) -> None:

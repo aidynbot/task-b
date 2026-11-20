@@ -8,11 +8,48 @@ from sqlalchemy.exc import IntegrityError
 from app.exceptions import BusinessRuleError, EntityNotFoundError, SlotConflictError
 from app.routers import router
 
-app = FastAPI(title="Internal CRM API", version="1.0.0")
+app = FastAPI(
+    title="Внутренняя CRM — API звонков и встреч",
+    summary="REST API для организаций, звонков и встреч менеджеров.",
+    description=(
+        "API фиксирует результаты обзвона организаций и управляет встречами.\n\n"
+        "Все значения `datetime` передаются и возвращаются в UTC (ISO 8601) "
+        "с указанием часового пояса. Рабочее время проверяется по `Asia/Almaty`: "
+        "понедельник–пятница, 09:00–18:00. Встреча длится 60 минут.\n\n"
+        'Отказы возвращаются с JSON-телом вида `{"detail": "описание ошибки"}`. '
+        "Основные коды: 404 — сущность не найдена, 409 — конфликт расписания "
+        "или уникальности, 422 — неверный запрос или нарушение бизнес-правила."
+    ),
+    version="1.0.0",
+    openapi_tags=[
+        {
+            "name": "Организации",
+            "description": "Создание организаций и получение списка с фильтрацией и пагинацией.",
+        },
+        {
+            "name": "Звонки",
+            "description": "Регистрация результата звонка и привязка встречи.",
+        },
+        {
+            "name": "Встречи",
+            "description": "Назначение, перенос и отмена 60-минутных встреч.",
+        },
+        {
+            "name": "Расписание",
+            "description": "Активные встречи менеджера за календарный день Алматы.",
+        },
+        {"name": "Сервис", "description": "Проверка доступности API."},
+    ],
+)
 app.include_router(router)
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Сервис"],
+    summary="Проверить доступность API",
+    description="Возвращает `status: ok`, если приложение отвечает на запросы.",
+)
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
