@@ -1,5 +1,6 @@
 """Pydantic request and response schemas for the CRM API."""
 
+import re
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
@@ -27,6 +28,32 @@ UTCDateTime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
 Bin = Annotated[str, StringConstraints(pattern=r"^[0-9]{12}$")]
 
 
+def _normalize_kazakhstan_phone(value: str) -> str:
+    """Normalize +7, 7, or domestic 8 prefixes to +7XXXXXXXXXX."""
+    compact = re.sub(r"[\s().-]", "", value)
+    if compact.startswith("+"):
+        if not compact.startswith("+7"):
+            raise ValueError("Телефон должен использовать код Казахстана +7 или 8")
+        digits = compact[1:]
+    else:
+        digits = compact
+
+    if not digits.isascii() or not digits.isdigit() or len(digits) != 11:
+        raise ValueError("Укажите номер из 11 цифр, например +77001234567")
+    if digits[0] not in {"7", "8"}:
+        raise ValueError("Номер должен начинаться с +7, 7 или 8")
+    if digits[0] == "8":
+        digits = "7" + digits[1:]
+    return f"+{digits}"
+
+
+PhoneNumber = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=32),
+    AfterValidator(_normalize_kazakhstan_phone),
+]
+
+
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,16 +63,14 @@ class CompanyCreate(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)
     ]
     bin: Bin
-    phone: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)
-    ]
+    phone: PhoneNumber
 
 
 class CompanyResponse(ORMModel):
     id: int
     name: str
     bin: Bin
-    phone: str
+    phone: PhoneNumber
     status: CompanyStatus
     created_at: UTCDateTime
 

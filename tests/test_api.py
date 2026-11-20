@@ -241,6 +241,41 @@ def test_naive_datetime_is_rejected(client: TestClient) -> None:
     assert isinstance(response.json()["detail"], str)
 
 
+def test_company_phone_formats_are_normalized(client: TestClient) -> None:
+    phone_formats = [
+        "+7 (700) 123-45-67",
+        "7 700 123 45 67",
+        "8 (700) 123-45-67",
+    ]
+    for bin_number, phone in enumerate(phone_formats, start=901):
+        response = client.post(
+            "/companies",
+            json={
+                "name": f"Phone format {bin_number}",
+                "bin": f"{bin_number:012d}",
+                "phone": phone,
+            },
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["phone"] == "+77001234567"
+
+
+def test_invalid_company_phone_is_rejected(client: TestClient) -> None:
+    for bin_number, phone in enumerate(
+        ["+7700123456", "770012345678", "+8 700 123 45 67", "+7 700 ABC 45 67"],
+        start=911,
+    ):
+        response = client.post(
+            "/companies",
+            json={
+                "name": f"Invalid phone {bin_number}",
+                "bin": f"{bin_number:012d}",
+                "phone": phone,
+            },
+        )
+        assert response.status_code == 422
+
+
 def test_concurrent_requests_for_same_manager_slot_create_one_meeting(
     client: TestClient,
 ) -> None:
